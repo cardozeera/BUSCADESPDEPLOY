@@ -6,3 +6,5 @@ telethon
 selenium
 playwright
 supabase
+passlib[bcrypt]
+python-jose
