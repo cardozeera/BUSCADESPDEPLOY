@@ -3,5 +3,5 @@ from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
-def root():
-    return {"message": "BuscaDesp Backend Rodando com FastAPI"}
+def read_root():
+    return {"msg": "API do BuscaDesp online!"}
