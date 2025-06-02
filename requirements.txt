@@ -1,3 +1,8 @@
-git add requirements.txt
-git commit -m "Adicionando uvicorn ao requirements"
-git push
+fastapi
+uvicorn
+requests
+python-dotenv
+telethon
+selenium
+playwright
+supabase
