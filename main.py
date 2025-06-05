@@ -14,7 +14,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# ---- CORS ----
+# ─── Adiciona CORS ANTES de todas as rotas ───
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,13 +22,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# ───────────────────────────────────────────────
 
-# ---- CONSTANTES JWT ----
+# ─── Configurações de JWT ───
 SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# ---- MODELOS ----
+# ─── Modelos (Schemas) ───
 class Usuario(BaseModel):
     email: str
     senha: str
@@ -42,7 +43,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-# ---- FUNÇÕES AUXILIARES JWT ----
+# ─── Funções Auxiliares JWT ───
 def create_access_token(data: dict, expires_delta: timedelta):
     to_encode = data.copy()
     expire = datetime.utcnow() + expires_delta
@@ -61,7 +62,7 @@ def verify_token(token: str):
 
 async def get_current_user(authorization: str = Header(...)):
     """
-    Espera header: Authorization: Bearer <token>
+    Header esperado: Authorization: Bearer <token>
     """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Header Authorization inválido")
@@ -69,31 +70,22 @@ async def get_current_user(authorization: str = Header(...)):
     user_id = verify_token(token)
     return user_id
 
-# ---- ENDPOINTS ----
+# ─── Rotas ───
 
 @app.get("/")
 def root():
     return {"message": "🚀 API BuscaDesp: use /login para obter token e depois /consulta com Authorization."}
 
-@app.get("/test-supabase")
-def test_supabase():
-    try:
-        data = supabase.table("usuarios").select("*").limit(1).execute()
-        return {"status": "success", "data": data.data}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 @app.post("/login", response_model=TokenResponse)
 def login_usuario(usuario: Usuario):
-    # 1) Busca usuário no Supabase
+    # 1) Verifica email e senha no Supabase
     resultado = supabase.table("usuarios").select("*").eq("email", usuario.email).execute()
     if not resultado.data:
         raise HTTPException(status_code=401, detail="Email não encontrado")
     usuario_db = resultado.data[0]
-    # 2) Verifica senha
     if not bcrypt.verify(usuario.senha, usuario_db["senha_hash"]):
         raise HTTPException(status_code=401, detail="Senha incorreta")
-    # 3) Gera JWT com sub = id do usuário
+    # 2) Gera JWT
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token({"sub": str(usuario_db["id"])}, expires_delta=access_token_expires)
     return {"access_token": token, "token_type": "bearer"}
@@ -103,8 +95,7 @@ def registrar_consulta(
     consulta: Consulta,
     current_user_id: str = Depends(get_current_user)
 ):
-    # 1) current_user_id já é validado pelo JWT
-    # 2) Grava a consulta no Supabase
+    # Grava a consulta no Supabase associada ao current_user_id
     supabase.table("consultas").insert({
         "usuario_id": current_user_id,
         "tipo_busca": consulta.tipo_busca,
@@ -132,7 +123,6 @@ def enviar_resposta(numero: str, mensagem: str):
 async def webhook(request: Request):
     try:
         payload = await request.json()
-        print("📩 Mensagem recebida:", payload)
         mensagem = payload['messages'][0]['text']['body']
         numero = payload['messages'][0]['from']
 
@@ -144,7 +134,6 @@ async def webhook(request: Request):
             enviar_resposta(numero, resposta)
 
         return {"status": "ok"}
-
     except Exception as e:
         print("❌ Erro ao processar webhook:", e)
         return {"status": "erro", "mensagem": str(e)}
