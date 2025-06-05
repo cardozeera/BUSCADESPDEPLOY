@@ -1,9 +1,8 @@
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from passlib.hash import bcrypt
-from datetime import datetime, timedelta
-from jose import JWTError, jwt
+from datetime import datetime
 from supabase_config.supabase_client import supabase
 from dotenv import load_dotenv
 import os
@@ -13,7 +12,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS
+# ---- CORS ----
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,38 +21,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+# ---- MODELOS ----
 
-def criar_token(dados: dict, expira_em: timedelta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)):
-    to_encode = dados.copy()
-    expire = datetime.utcnow() + expira_em
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def validar_token(authorization: str = Header(...)):
-    try:
-        token = authorization.split(" ")[1]
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("email")
-    except (JWTError, IndexError):
-        raise HTTPException(status_code=401, detail="Token inválido ou ausente")
-
-# Models
 class Usuario(BaseModel):
     email: str
     senha: str
 
-class Consulta(BaseModel):
+class ConsultaAuth(BaseModel):
+    email: str
+    senha: str
     tipo_busca: str
     termo: str
     resultado: str
 
+# ---- ENDPOINTS SEM JWT ----
+
 @app.get("/")
 def root():
-    return {"message": "🚀 API BuscaDesp com JWT ativa."}
+    return {"message": "🚀 API BuscaDesp sem JWT: use email+senha para /consulta."}
 
 @app.get("/test-supabase")
 def test_supabase():
@@ -65,6 +50,7 @@ def test_supabase():
 
 @app.post("/register")
 def registrar_usuario(usuario: Usuario):
+    # Hash da senha e grava no Supabase
     senha_criptografada = bcrypt.hash(usuario.senha)
     existe = supabase.table("usuarios").select("*").eq("email", usuario.email).execute()
     if existe.data:
@@ -78,21 +64,27 @@ def registrar_usuario(usuario: Usuario):
 
 @app.post("/login")
 def login_usuario(usuario: Usuario):
+    # Valida email e senha e, se estiver tudo certo, retorna “Login válido”
     resultado = supabase.table("usuarios").select("*").eq("email", usuario.email).execute()
     if not resultado.data:
         raise HTTPException(status_code=401, detail="Email não encontrado")
     usuario_db = resultado.data[0]
     if not bcrypt.verify(usuario.senha, usuario_db["senha_hash"]):
         raise HTTPException(status_code=401, detail="Senha incorreta")
-    token = criar_token({"email": usuario.email})
-    return {"access_token": token, "token_type": "bearer"}
+    return {"status": "ok", "message": "Login válido"}
 
 @app.post("/consulta")
-def registrar_consulta(consulta: Consulta, email: str = Depends(validar_token)):
-    usuario = supabase.table("usuarios").select("id").eq("email", email).execute()
-    if not usuario.data:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    usuario_id = usuario.data[0]["id"]
+def registrar_consulta(consulta: ConsultaAuth):
+    # 1) Verifica se o usuário existe e a senha confere
+    resultado = supabase.table("usuarios").select("*").eq("email", consulta.email).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    usuario_db = resultado.data[0]
+    if not bcrypt.verify(consulta.senha, usuario_db["senha_hash"]):
+        raise HTTPException(status_code=401, detail="Senha incorreta")
+    usuario_id = usuario_db["id"]
+
+    # 2) Grava a consulta no Supabase
     supabase.table("consultas").insert({
         "usuario_id": usuario_id,
         "tipo_busca": consulta.tipo_busca,
@@ -100,7 +92,8 @@ def registrar_consulta(consulta: Consulta, email: str = Depends(validar_token)):
         "resultado": consulta.resultado,
         "criado_em": datetime.utcnow().isoformat()
     }).execute()
-    return {"status": "registrado", "usuario": email}
+
+    return {"status": "registrado", "usuario": consulta.email}
 
 def enviar_resposta(numero: str, mensagem: str):
     instance_id = os.getenv("ZAPI_INSTANCE_ID")
