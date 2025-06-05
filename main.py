@@ -5,39 +5,43 @@ import io
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 from dotenv import load_dotenv
+import requests
 
 from telethon import TelegramClient, events
-import requests as _req
-from supabase_config.supabase_client import supabase
+from supabase_config.supabase_client import supabase  # seu cliente Supabase já está configurado neste módulo
 
 # ─────────── Carrega variáveis de ambiente ───────────
 load_dotenv()
 
-API_ID         = int(os.getenv("API_ID", "0"))              # Ex: 28382442
-API_HASH       = os.getenv("API_HASH", "")                  # Ex: 5f5cdede83eecadeef4234fc1bd095a5c
-PHONE          = os.getenv("PHONE", "")                     # Ex: +5551995788207
-SESSION_NAME   = os.getenv("SESSION_NAME", "buscadesp_session")
-BOT_USERNAME   = os.getenv("BOT_USERNAME", "")              # Ex: @Yanbuscabot
+# Supabase (já configurado em supabase_config), mas deixamos as variáveis aqui para referência:
+# SUPABASE_URL   = os.getenv("SUPABASE_URL")
+# SUPABASE_KEY   = os.getenv("SUPABASE_KEY")
 
-SECRET_KEY               = os.getenv("SECRET_KEY", "supersecretkey")
+SECRET_KEY               = os.getenv("SECRET_KEY", "buscadesp_is_lit_2025")
 ALGORITHM                = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", None)  # Caso queira usar Bot API no futuro
+# Telethon / Telegram
+API_ID         = int(os.getenv("API_ID", "0"))                # ex.: 28382442
+API_HASH       = os.getenv("API_HASH", "")                    # ex.: 5f5cdede83eecadeef4234fc1bd095a5c
+PHONE          = os.getenv("PHONE", "")                       # ex.: +5551995788207
+SESSION_NAME   = os.getenv("SESSION_NAME", "buscadesp_session")
+BOT_USERNAME   = os.getenv("BOT_USERNAME", "@Yanbuscabot")     # ex.: @Yanbuscabot
 
+# Base URL público do seu backend no Render (para chamadas HTTP internas)
 BASE_URL = os.getenv("BASE_URL", "https://buscadespdeploy-2.onrender.com")
 
 # ───────── Configure Logging ─────────
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ─────────── Setup FastAPI ───────────
+# ─────────── Inicializa o FastAPI ───────────
 app = FastAPI()
 
 app.add_middleware(
@@ -48,7 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────── Models ───────────
+# ─────────── Modelos Pydantic ───────────
 class Usuario(BaseModel):
     email: str
     senha: str
@@ -62,7 +66,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-# ─────────── Funções JWT ───────────
+# ─────────── Funções de JWT ───────────
 def create_access_token(data: dict, expires_delta: timedelta):
     to_encode = data.copy()
     expire = datetime.utcnow() + expires_delta
@@ -88,7 +92,7 @@ async def get_current_user(authorization: str = Header(...)):
 # ─────────── Rotas FastAPI ───────────
 @app.get("/")
 def root():
-    return { "message": "🚀 API BuscaDesp: use /login para obter token e depois /consulta com Authorization." }
+    return {"message": "🚀 API BuscaDesp: use /login para obter token e depois /consulta com Authorization."}
 
 @app.post("/login", response_model=TokenResponse)
 def login_usuario(usuario: Usuario):
@@ -101,7 +105,7 @@ def login_usuario(usuario: Usuario):
 
     acesso_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token({"sub": str(usuario_db["id"])}, expires_delta=acesso_expires)
-    return { "access_token": token, "token_type": "bearer" }
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/consulta")
 def registrar_consulta(consulta: Consulta, current_user_id: str = Depends(get_current_user)):
@@ -112,7 +116,7 @@ def registrar_consulta(consulta: Consulta, current_user_id: str = Depends(get_cu
         "resultado": consulta.resultado,
         "criado_em": datetime.utcnow().isoformat()
     }).execute()
-    return { "status": "registrado", "usuario_id": current_user_id }
+    return {"status": "registrado", "usuario_id": current_user_id}
 
 @app.get("/consultas")
 def listar_consultas(current_user_id: str = Depends(get_current_user)):
@@ -124,21 +128,18 @@ def listar_consultas(current_user_id: str = Depends(get_current_user)):
     return resp.data
 
 # ─────────── Integração com Telethon ───────────
-# Inicializa o cliente Telethon usando suas credenciais de usuário Telegram
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
-# Handler para /start
 @client.on(events.NewMessage(pattern=r"^/start"))
 async def start_cmd(event):
     await event.reply("Olá! Para consultar, envie:\n/consulta <email> <senha> <tipo> <termo>")
 
-# Handler para /consulta
 @client.on(events.NewMessage(pattern=r"^/consulta\s+"))
 async def consulta_cmd(event):
     chat_id = event.chat_id
     texto = event.message.message.strip()
     partes = texto.split()
-    # Esperamos algo como: /consulta user@ex email senha tipo termo
+    # /consulta <email> <senha> <tipo> <termo>
     if len(partes) < 5:
         await event.reply("Uso incorreto. Envie:\n/consulta <email> <senha> <tipo> <termo>")
         return
@@ -149,9 +150,9 @@ async def consulta_cmd(event):
         await event.reply("Informe o termo após /consulta <email> <senha> <tipo> <termo>")
         return
 
-    # 1) Autentica no endpoint /login do próprio FastAPI
+    # 1) Autentica via /login do próprio FastAPI
     try:
-        resp_login = _req.post(
+        resp_login = requests.post(
             f"{BASE_URL}/login",
             json={"email": email, "senha": senha}
         )
@@ -169,45 +170,38 @@ async def consulta_cmd(event):
         await event.reply("Erro ao obter token de acesso.")
         return
 
-    # 2) Monta o resultado (aqui você pode implementar sua lógica real)
-    #    Por enquanto, usamos um texto fictício.
+    # 2) Gera resultado (substitua pela sua lógica real de consulta)
     resultado_texto = f"Resultado fictício para {tipo_busca} = {termo}"
 
-    # 3) Armazena no Supabase via endpoint /consulta
+    # 3) Grava no Supabase via /consulta
     try:
-        _req.post(
+        requests.post(
             f"{BASE_URL}/consulta",
-            json={ "tipo_busca": tipo_busca, "termo": termo, "resultado": resultado_texto },
-            headers={ "Authorization": "Bearer " + token }
+            json={"tipo_busca": tipo_busca, "termo": termo, "resultado": resultado_texto},
+            headers={"Authorization": "Bearer " + token}
         )
     except Exception:
-        # Se der erro ao gravar, só logamos mas continuamos para enviar o arquivo
         logger.error("Erro ao gravar consulta no Supabase", exc_info=True)
 
-    # 4) Cria um arquivo TXT em memória
+    # 4) Monta arquivo TXT em memória
     txt_content = f"Tipo: {tipo_busca}\nTermo: {termo}\nResultado:\n{resultado_texto}"
     bio = io.BytesIO()
     bio.write(txt_content.encode("utf-8"))
     bio.seek(0)
 
-    # 5) Envia o arquivo TXT para o usuário
+    # 5) Envia o arquivo TXT de volta ao usuário
     await client.send_file(chat_id, bio, filename="consulta.txt",
                            caption="Aqui está seu resultado em TXT.")
 
-# ─────────── FastAPI Startup + Telethon ───────────
+# ─────────── Eventos de Startup/Shutdown ───────────
 @app.on_event("startup")
 async def startup_event():
-    # Inicia o Telethon em segundo plano
-    # O connect() faz login usando a session previamente salva em SESSION_NAME.session
     await client.connect()
     if not await client.is_user_authorized():
-        # Caso a sessão não esteja autorizada, isso exigiria input de código, então
-        # certifique-se de já ter rodado um script separado (e.g. gerar_session.py) antes.
         raise Exception("Conta Telegram não está autorizada. Execute gerar_session.py primeiro.")
-    logger.info("Telethon conectado como %s", await client.get_me().username)
+    username = (await client.get_me()).username
+    logger.info("Telethon conectado como @%s", username)
 
-# ─────────── FastAPI Shutdown ───────────
 @app.on_event("shutdown")
 async def shutdown_event():
     await client.disconnect()
-
