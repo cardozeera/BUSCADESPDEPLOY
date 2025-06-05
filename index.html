@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>BuscaDesp</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; }
+    input, select, textarea { width: 100%; margin: 5px 0; padding: 8px; }
+    button { padding: 10px 20px; }
+    .hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    #login-msg, #consulta-msg, #hist-msg { margin-top: 5px; }
+  </style>
+</head>
+<body>
+
+  <h1>BuscaDesp</h1>
+
+  <!-- Seção de Login (sem registro) -->
+  <div id="auth-section">
+    <h2>Login</h2>
+    <input type="email" id="login-email" placeholder="Email" />
+    <input type="password" id="login-senha" placeholder="Senha" />
+    <button onclick="logar()">Login</button>
+    <p id="login-msg" style="color: red;"></p>
+  </div>
+
+  <!-- Seção Principal (após login) -->
+  <div id="main-section" class="hidden">
+    <p>Logado como <span id="user-email"></span> <button onclick="logout()">Logout</button></p>
+
+    <h2>Nova Consulta</h2>
+    <select id="tipo_busca">
+      <option value="cpf3">CPF3</option>
+      <option value="nome">Nome</option>
+      <option value="telefone">Telefone</option>
+      <option value="placa">Placa</option>
+    </select>
+    <input type="text" id="termo" placeholder="Digite o termo de busca" />
+    <textarea id="resultado" rows="3" placeholder="Cole o resultado ou texto"></textarea>
+    <button onclick="fazerConsulta()">Enviar Consulta</button>
+    <p id="consulta-msg" style="color: green;"></p>
+
+    <hr />
+
+    <h2>Histórico de Consultas</h2>
+    <button onclick="carregarHistorico()">Ver Histórico</button>
+    <p id="hist-msg" style="color: red;"></p>
+    <div id="historico-section"></div>
+  </div>
+
+  <script>
+    // URL do seu backend (alterar conforme seu domínio no Render)
+    const API_BASE = "https://buscadespdeploy-2.onrender.com";
+
+    // Guarda email+senha em memória após login
+    let auth = { email: "", senha: "" };
+
+    function logar() {
+      const email = document.getElementById("login-email").value.trim();
+      const senha = document.getElementById("login-senha").value.trim();
+      if (!email || !senha) {
+        document.getElementById("login-msg").textContent = "Preencha email e senha.";
+        return;
+      }
+
+      fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, senha })
+      })
+      .then(res => res.json().then(body => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (ok && body.status === "ok") {
+          auth.email = email;
+          auth.senha = senha;
+          document.getElementById("user-email").textContent = email;
+          document.getElementById("auth-section").classList.add("hidden");
+          document.getElementById("main-section").classList.remove("hidden");
+          document.getElementById("login-msg").textContent = "";
+        } else {
+          document.getElementById("login-msg").textContent = body.detail || "Login inválido.";
+        }
+      })
+      .catch(err => {
+        document.getElementById("login-msg").textContent = "Erro de rede.";
+      });
+    }
+
+    function logout() {
+      auth = { email: "", senha: "" };
+      document.getElementById("main-section").classList.add("hidden");
+      document.getElementById("auth-section").classList.remove("hidden");
+      document.getElementById("login-msg").textContent = "";
+      document.getElementById("consulta-msg").textContent = "";
+      document.getElementById("hist-msg").textContent = "";
+      document.getElementById("historico-section").innerHTML = "";
+    }
+
+    function fazerConsulta() {
+      const tipo_busca = document.getElementById("tipo_busca").value;
+      const termo = document.getElementById("termo").value.trim();
+      const resultado = document.getElementById("resultado").value.trim();
+      const msgEl = document.getElementById("consulta-msg");
+      msgEl.textContent = "";
+
+      if (!termo || !resultado) {
+        msgEl.textContent = "Informe termo e resultado.";
+        return;
+      }
+
+      fetch(`${API_BASE}/consulta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: auth.email,
+          senha: auth.senha,
+          tipo_busca,
+          termo,
+          resultado
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === "registrado") {
+          msgEl.textContent = "Consulta registrada!";
+          document.getElementById("termo").value = "";
+          document.getElementById("resultado").value = "";
+        } else {
+          msgEl.textContent = data.detail || "Erro ao registrar.";
+        }
+      })
+      .catch(err => {
+        msgEl.textContent = "Erro de rede.";
+      });
+    }
+
+    function carregarHistorico() {
+      const histEl = document.getElementById("historico-section");
+      const msgEl = document.getElementById("hist-msg");
+      msgEl.textContent = "";
+      histEl.innerHTML = "";
+
+      const url = `${API_BASE}/consultas?email=${encodeURIComponent(auth.email)}&senha=${encodeURIComponent(auth.senha)}`;
+      fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        if (!Array.isArray(data)) {
+          msgEl.textContent = data.detail || "Erro ao carregar histórico.";
+          return;
+        }
+        if (data.length === 0) {
+          histEl.innerHTML = "<p>Nenhuma consulta registrada.</p>";
+          return;
+        }
+        let html = "<table><tr><th>Tipo</th><th>Termo</th><th>Data</th><th>Resultado</th></tr>";
+        data.forEach(item => {
+          html += `<tr>
+            <td>${item.tipo_busca}</td>
+            <td>${item.termo}</td>
+            <td>${new Date(item.criado_em).toLocaleString()}</td>
+            <td>${item.resultado}</td>
+          </tr>`;
+        });
+        html += "</table>";
+        histEl.innerHTML = html;
+      })
+      .catch(err => {
+        msgEl.textContent = "Erro de rede.";
+      });
+    }
+  </script>
+
+</body>
+</html>
