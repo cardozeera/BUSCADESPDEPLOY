@@ -7,3 +7,4 @@ selenium
 supabase
 passlib[bcrypt]
 python-jose
+python-telegram-bot==20.0a0
