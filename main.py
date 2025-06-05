@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException, Request
+# main.py
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from passlib.hash import bcrypt
-from datetime import datetime
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
 from supabase_config.supabase_client import supabase
 from dotenv import load_dotenv
 import os
@@ -21,24 +23,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---- MODELOS ----
+# ---- CONSTANTES JWT ----
+SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+# ---- MODELOS ----
 class Usuario(BaseModel):
     email: str
     senha: str
 
-class ConsultaAuth(BaseModel):
-    email: str
-    senha: str
+class Consulta(BaseModel):
     tipo_busca: str
     termo: str
     resultado: str
 
-# ---- ENDPOINTS SEM JWT ----
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+# ---- FUNÇÕES AUXILIARES JWT ----
+def create_access_token(data: dict, expires_delta: timedelta):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+async def get_current_user(authorization: str = Header(...)):
+    """
+    Espera header: Authorization: Bearer <token>
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Header Authorization inválido")
+    token = authorization.split("Bearer ")[1]
+    user_id = verify_token(token)
+    return user_id
+
+# ---- ENDPOINTS ----
 
 @app.get("/")
 def root():
-    return {"message": "🚀 API BuscaDesp sem JWT: use email+senha para /consulta."}
+    return {"message": "🚀 API BuscaDesp: use /login para obter token e depois /consulta com Authorization."}
 
 @app.get("/test-supabase")
 def test_supabase():
@@ -48,52 +83,36 @@ def test_supabase():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.post("/register")
-def registrar_usuario(usuario: Usuario):
-    # Hash da senha e grava no Supabase
-    senha_criptografada = bcrypt.hash(usuario.senha)
-    existe = supabase.table("usuarios").select("*").eq("email", usuario.email).execute()
-    if existe.data:
-        raise HTTPException(status_code=400, detail="Email já cadastrado")
-    supabase.table("usuarios").insert({
-        "email": usuario.email,
-        "senha_hash": senha_criptografada,
-        "criado_em": datetime.utcnow().isoformat()
-    }).execute()
-    return {"status": "ok", "usuario": usuario.email}
-
-@app.post("/login")
+@app.post("/login", response_model=TokenResponse)
 def login_usuario(usuario: Usuario):
-    # Valida email e senha e, se estiver tudo certo, retorna “Login válido”
+    # 1) Busca usuário no Supabase
     resultado = supabase.table("usuarios").select("*").eq("email", usuario.email).execute()
     if not resultado.data:
         raise HTTPException(status_code=401, detail="Email não encontrado")
     usuario_db = resultado.data[0]
+    # 2) Verifica senha
     if not bcrypt.verify(usuario.senha, usuario_db["senha_hash"]):
         raise HTTPException(status_code=401, detail="Senha incorreta")
-    return {"status": "ok", "message": "Login válido"}
+    # 3) Gera JWT com sub = id do usuário
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    token = create_access_token({"sub": str(usuario_db["id"])}, expires_delta=access_token_expires)
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/consulta")
-def registrar_consulta(consulta: ConsultaAuth):
-    # 1) Verifica se o usuário existe e a senha confere
-    resultado = supabase.table("usuarios").select("*").eq("email", consulta.email).execute()
-    if not resultado.data:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    usuario_db = resultado.data[0]
-    if not bcrypt.verify(consulta.senha, usuario_db["senha_hash"]):
-        raise HTTPException(status_code=401, detail="Senha incorreta")
-    usuario_id = usuario_db["id"]
-
+def registrar_consulta(
+    consulta: Consulta,
+    current_user_id: str = Depends(get_current_user)
+):
+    # 1) current_user_id já é validado pelo JWT
     # 2) Grava a consulta no Supabase
     supabase.table("consultas").insert({
-        "usuario_id": usuario_id,
+        "usuario_id": current_user_id,
         "tipo_busca": consulta.tipo_busca,
         "termo": consulta.termo,
         "resultado": consulta.resultado,
         "criado_em": datetime.utcnow().isoformat()
     }).execute()
-
-    return {"status": "registrado", "usuario": consulta.email}
+    return {"status": "registrado", "usuario_id": current_user_id}
 
 def enviar_resposta(numero: str, mensagem: str):
     instance_id = os.getenv("ZAPI_INSTANCE_ID")
