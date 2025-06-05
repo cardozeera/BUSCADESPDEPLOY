@@ -2,59 +2,198 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BuscaDesp</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; }
-    input, select, textarea { width: 100%; margin: 5px 0; padding: 8px; }
-    button { padding: 10px 20px; margin-top: 5px; }
-    .hidden { display: none; }
-    #login-msg, #consulta-msg { margin-top: 5px; }
-    #logout-btn { margin-left: 10px; }
+    /* Reset simples */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f7f9;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #2c3e50;
+    }
+
+    /* Container principal para centralizar */
+    .container {
+      background: #fff;
+      width: 100%;
+      max-width: 600px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 20px;
+    }
+
+    /* Estilo geral de formulários */
+    .form-group {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      margin-bottom: 6px;
+      font-weight: bold;
+      color: #555;
+    }
+    input[type="email"],
+    input[type="password"],
+    input[type="text"],
+    select,
+    textarea {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+      transition: border-color 0.2s ease;
+    }
+    input:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #2c3e50;
+    }
+
+    button {
+      padding: 10px 20px;
+      background-color: #2c3e50;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background-color 0.2s ease;
+    }
+    button:hover {
+      background-color: #1a252f;
+    }
+
+    /* Mensagens de erro/sucesso */
+    .msg-error {
+      color: #c0392b;
+      margin-top: 6px;
+      font-size: 0.9rem;
+    }
+    .msg-success {
+      color: #27ae60;
+      margin-top: 6px;
+      font-size: 0.9rem;
+    }
+
+    /* Header de usuário logado */
+    .user-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .user-info span {
+      font-weight: bold;
+    }
+    .btn-logout {
+      background-color: #e74c3c;
+    }
+    .btn-logout:hover {
+      background-color: #c0392b;
+    }
+
+    /* Histórico */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #ecf0f1;
+      text-align: left;
+    }
+
+    /* Responsividade */
+    @media (max-width: 480px) {
+      .container {
+        padding: 12px;
+      }
+      button {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
 
   <h1>BuscaDesp</h1>
 
-  <!-- Seção de Login -->
-  <div id="auth-section">
-    <h2>Login</h2>
-    <input type="email" id="login-email" placeholder="Email" />
-    <input type="password" id="login-senha" placeholder="Senha" />
-    <button id="btn-login">Login</button>
-    <p id="login-msg" style="color: red;"></p>
-  </div>
+  <div class="container">
+    <!-- Seção de Login -->
+    <div id="auth-section">
+      <div class="form-group">
+        <label for="login-email">Email</label>
+        <input type="email" id="login-email" placeholder="seu@exemplo.com" />
+      </div>
+      <div class="form-group">
+        <label for="login-senha">Senha</label>
+        <input type="password" id="login-senha" placeholder="••••••••" />
+      </div>
+      <button id="btn-login">Login</button>
+      <p id="login-msg" class="msg-error"></p>
+    </div>
 
-  <!-- Seção Principal (após login) -->
-  <div id="main-section" class="hidden">
-    <p>
-      Logado como <span id="user-email"></span>
-      <button id="btn-logout" style="margin-left:10px;">Logout</button>
-    </p>
+    <!-- Seção Principal (após login) -->
+    <div id="main-section" class="hidden">
+      <div class="user-info">
+        <span>Logado como <span id="user-email"></span></span>
+        <button id="btn-logout" class="btn-logout">Logout</button>
+      </div>
 
-    <h2>Nova Consulta</h2>
-    <select id="tipo_busca">
-      <option value="cpf3">CPF3</option>
-      <option value="nome">Nome</option>
-      <option value="telefone">Telefone</option>
-      <option value="placa">Placa</option>
-    </select>
-    <input type="text" id="termo" placeholder="Digite o termo de busca" />
-    <textarea id="resultado" rows="3" placeholder="Cole o resultado ou texto"></textarea>
-    <button id="btn-consulta">Enviar Consulta</button>
-    <p id="consulta-msg" style="color: green;"></p>
+      <h2>Nova Consulta</h2>
+      <div class="form-group">
+        <label for="tipo_busca">Tipo de Busca</label>
+        <select id="tipo_busca">
+          <option value="cpf3">CPF3</option>
+          <option value="nome">Nome</option>
+          <option value="telefone">Telefone</option>
+          <option value="placa">Placa</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="termo">Termo de Busca</label>
+        <input type="text" id="termo" placeholder="Digite o termo de busca" />
+      </div>
+      <div class="form-group">
+        <label for="resultado">Resultado</label>
+        <textarea id="resultado" rows="3" placeholder="Cole o resultado ou texto"></textarea>
+      </div>
+      <button id="btn-consulta">Enviar Consulta</button>
+      <p id="consulta-msg" class="msg-success"></p>
+
+      <hr style="margin: 24px 0;" />
+
+      <h2>Histórico de Consultas</h2>
+      <button id="btn-historico">Ver Histórico</button>
+      <p id="hist-msg" class="msg-error"></p>
+      <div id="historico-section"></div>
+    </div>
   </div>
 
   <script>
-    // ========== CONFIGURAÇÃO ==========
-    // Substitua pela URL exata do seu backend no Render:
     const API_BASE = "https://buscadespdeploy-2.onrender.com";
-
-    // Aqui guardamos o JWT após o login
     let jwtToken = "";
-    let userEmail = "";
-
-    // ======== FUNÇÕES =========
 
     // 1) LOGIN
     document.getElementById("btn-login").addEventListener("click", () => {
@@ -75,34 +214,30 @@
       })
       .then(async res => {
         const body = await res.json();
-        if (!res.ok) {
-          // Exibe mensagem de erro do backend (como “Email não encontrado” ou “Senha incorreta”)
-          throw new Error(body.detail || "Login inválido.");
-        }
+        if (!res.ok) throw new Error(body.detail || "Login inválido.");
         return body;
       })
       .then(body => {
         jwtToken = body.access_token;
-        userEmail = email;
         document.getElementById("user-email").textContent = email;
-        // Exibe a área de consulta e esconde o login
         document.getElementById("auth-section").classList.add("hidden");
         document.getElementById("main-section").classList.remove("hidden");
       })
       .catch(err => {
-        loginMsg.textContent = err.message || "Erro de rede.";
+        document.getElementById("login-msg").textContent = err.message || "Erro de rede.";
       });
     });
 
     // 2) LOGOUT
     document.getElementById("btn-logout").addEventListener("click", () => {
       jwtToken = "";
-      userEmail = "";
       document.getElementById("login-email").value = "";
       document.getElementById("login-senha").value = "";
       document.getElementById("consulta-msg").textContent = "";
       document.getElementById("main-section").classList.add("hidden");
       document.getElementById("auth-section").classList.remove("hidden");
+      document.getElementById("historico-section").innerHTML = "";
+      document.getElementById("hist-msg").textContent = "";
     });
 
     // 3) ENVIAR NOVA CONSULTA
@@ -114,13 +249,13 @@
       msgEl.textContent = "";
 
       if (!termo || !resultado) {
-        msgEl.textContent = "Informe termo e resultado.";
         msgEl.style.color = "red";
+        msgEl.textContent = "Informe termo e resultado.";
         return;
       }
       if (!jwtToken) {
-        msgEl.textContent = "Você não está autenticado.";
         msgEl.style.color = "red";
+        msgEl.textContent = "Você não está autenticado.";
         return;
       }
 
@@ -130,11 +265,7 @@
           "Content-Type": "application/json",
           "Authorization": "Bearer " + jwtToken
         },
-        body: JSON.stringify({
-          tipo_busca,
-          termo,
-          resultado
-        })
+        body: JSON.stringify({ tipo_busca, termo, resultado })
       })
       .then(async res => {
         const data = await res.json();
@@ -155,8 +286,46 @@
       });
     });
 
-    // (Opcional) Você pode adicionar aqui GET /consultas no futuro
-  </script>
+    // 4) VER HISTÓRICO
+    document.getElementById("btn-historico").addEventListener("click", () => {
+      const histEl = document.getElementById("historico-section");
+      const msgEl = document.getElementById("hist-msg");
+      histEl.innerHTML = "";
+      msgEl.textContent = "";
 
+      fetch(`${API_BASE}/consultas`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + jwtToken
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (!Array.isArray(data)) {
+          msgEl.textContent = data.detail || "Erro ao carregar histórico.";
+          return;
+        }
+        if (data.length === 0) {
+          histEl.innerHTML = "<p>Nenhuma consulta registrada.</p>";
+          return;
+        }
+        let html = "<table><tr><th>Tipo</th><th>Termo</th><th>Data</th><th>Resultado</th></tr>";
+        data.forEach(item => {
+          html += `<tr>
+            <td>${item.tipo_busca}</td>
+            <td>${item.termo}</td>
+            <td>${new Date(item.criado_em).toLocaleString()}</td>
+            <td>${item.resultado}</td>
+          </tr>`;
+        });
+        html += "</table>";
+        histEl.innerHTML = html;
+      })
+      .catch(() => {
+        msgEl.textContent = "Erro de rede ao buscar histórico.";
+      });
+    });
+  </script>
 </body>
 </html>
