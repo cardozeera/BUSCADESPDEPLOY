@@ -1,19 +1,18 @@
 services:
   - type: web
-    name: buscadespdeploy      # o nome do serviço, pode ser outro que você queira
-    env: python3               # garante que o container será Python 3.x
-    region: oregon             # ou “oregon”, “frankfurt” etc—o local que você escolher
-    plan: free                 # ou starter, professional, conforme sua conta
+    name: buscadespdeploy
+    env: python3
+    region: oregon        # ou a região que você costuma usar
+    plan: free            # ou "starter", se for o plano que você contratou
     buildCommand: pip3 install -r requirements.txt
     startCommand: python3 -m uvicorn main:app --host 0.0.0.0 --port $PORT
-    envVars:                   # variáveis de ambiente que você usava no .env
-      SUPABASE_URL: your-url-supabase
-      SUPABASE_KEY: your-key-supabase
-      SECRET_KEY: buscadesp_is_lit_2025
+    envVars:
+      SUPABASE_URL: "https://myjoddcnjgugdabbmyrj.supabase.co"
+      SUPABASE_KEY: "eyJhbgciOiJIUzi1NiIsInR5cCI6IkpXVCJ9..."
+      SECRET_KEY: "buscadesp_is_lit_2025"
       API_ID: "28382442"
       API_HASH: "5f5cdede83eecadeef4234fc1bd095a5"
       PHONE: "+5551995788207"
       SESSION_NAME: "buscadesp_session"
       BOT_USERNAME: "@YanbuscaBot"
-      BASE_URL: "https://buscadespdeploy-2.onrender.com"
-
+      BASE_URL: "https://buscadespdeploy.onrender.com"
