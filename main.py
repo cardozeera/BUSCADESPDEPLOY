@@ -5,7 +5,7 @@ import io
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from passlib.hash import bcrypt
@@ -13,29 +13,26 @@ from jose import JWTError, jwt
 from dotenv import load_dotenv
 import requests
 
+# Telethon
 from telethon import TelegramClient, events
-from supabase_config.supabase_client import supabase  # seu cliente Supabase já está configurado neste módulo
+
+# Supabase (já configurado em supabase_config)
+from supabase_config.supabase_client import supabase
 
 # ─────────── Carrega variáveis de ambiente ───────────
 load_dotenv()
 
-# Supabase (já configurado em supabase_config), mas deixamos as variáveis aqui para referência:
-# SUPABASE_URL   = os.getenv("SUPABASE_URL")
-# SUPABASE_KEY   = os.getenv("SUPABASE_KEY")
-
-SECRET_KEY               = os.getenv("SECRET_KEY", "buscadesp_is_lit_2025")
-ALGORITHM                = "HS256"
+SECRET_KEY                = os.getenv("SECRET_KEY", "buscadesp_is_lit_2025")
+ALGORITHM                 = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Telethon / Telegram
-API_ID         = int(os.getenv("API_ID", "0"))                # ex.: 28382442
-API_HASH       = os.getenv("API_HASH", "")                    # ex.: 5f5cdede83eecadeef4234fc1bd095a5c
-PHONE          = os.getenv("PHONE", "")                       # ex.: +5551995788207
-SESSION_NAME   = os.getenv("SESSION_NAME", "buscadesp_session")
-BOT_USERNAME   = os.getenv("BOT_USERNAME", "@Yanbuscabot")     # ex.: @Yanbuscabot
+API_ID       = int(os.getenv("API_ID", "0"))
+API_HASH     = os.getenv("API_HASH", "")
+PHONE        = os.getenv("PHONE", "")
+SESSION_NAME = os.getenv("SESSION_NAME", "buscadesp_session")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "@Yanbuscabot")
 
-# Base URL público do seu backend no Render (para chamadas HTTP internas)
-BASE_URL = os.getenv("BASE_URL", "https://buscadespdeploy-2.onrender.com")
+BASE_URL     = os.getenv("BASE_URL", "https://buscadespdeploy.onrender.com")
 
 # ───────── Configure Logging ─────────
 logging.basicConfig(level=logging.INFO)
@@ -43,7 +40,6 @@ logger = logging.getLogger(__name__)
 
 # ─────────── Inicializa o FastAPI ───────────
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -92,7 +88,9 @@ async def get_current_user(authorization: str = Header(...)):
 # ─────────── Rotas FastAPI ───────────
 @app.get("/")
 def root():
-    return {"message": "🚀 API BuscaDesp: use /login para obter token e depois /consulta com Authorization."}
+    return {
+        "message": "🚀 API BuscaDesp rodando. Use /login para obter token e depois /consulta com Authorization."
+    }
 
 @app.post("/login", response_model=TokenResponse)
 def login_usuario(usuario: Usuario):
@@ -127,19 +125,43 @@ def listar_consultas(current_user_id: str = Depends(get_current_user)):
         .execute()
     return resp.data
 
-# ─────────── Integração com Telethon ───────────
+# ─────────── Inicializa Telethon (sem travar o app) ───────────
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
+@app.on_event("startup")
+async def startup_event():
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            logger.warning(
+                "Telethon NÃO autorizado no container. Pulei a conexão. "
+                "Para habilitar, gere a sessão e comite o arquivo .session."
+            )
+            return
+        username = (await client.get_me()).username
+        logger.info("Telethon conectado como @%s", username)
+    except Exception as e:
+        logger.error("Falha ao conectar Telethon no startup: %s", e, exc_info=True)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    try:
+        await client.disconnect()
+    except Exception:
+        pass
+
+# ─────────── Handlers de Telethon ───────────
 @client.on(events.NewMessage(pattern=r"^/start"))
 async def start_cmd(event):
-    await event.reply("Olá! Para consultar, envie:\n/consulta <email> <senha> <tipo> <termo>")
+    await event.reply(
+        "Olá! Para consultar, envie:\n/consulta <email> <senha> <tipo> <termo>"
+    )
 
 @client.on(events.NewMessage(pattern=r"^/consulta\s+"))
 async def consulta_cmd(event):
     chat_id = event.chat_id
     texto = event.message.message.strip()
     partes = texto.split()
-    # /consulta <email> <senha> <tipo> <termo>
     if len(partes) < 5:
         await event.reply("Uso incorreto. Envie:\n/consulta <email> <senha> <tipo> <termo>")
         return
@@ -150,7 +172,7 @@ async def consulta_cmd(event):
         await event.reply("Informe o termo após /consulta <email> <senha> <tipo> <termo>")
         return
 
-    # 1) Autentica via /login do próprio FastAPI
+    # 1) Autentica via /login do FastAPI
     try:
         resp_login = requests.post(
             f"{BASE_URL}/login",
@@ -170,7 +192,7 @@ async def consulta_cmd(event):
         await event.reply("Erro ao obter token de acesso.")
         return
 
-    # 2) Gera resultado (substitua pela sua lógica real de consulta)
+    # 2) Gera resultado fictício
     resultado_texto = f"Resultado fictício para {tipo_busca} = {termo}"
 
     # 3) Grava no Supabase via /consulta
@@ -190,18 +212,9 @@ async def consulta_cmd(event):
     bio.seek(0)
 
     # 5) Envia o arquivo TXT de volta ao usuário
-    await client.send_file(chat_id, bio, filename="consulta.txt",
-                           caption="Aqui está seu resultado em TXT.")
-
-# ─────────── Eventos de Startup/Shutdown ───────────
-@app.on_event("startup")
-async def startup_event():
-    await client.connect()
-    if not await client.is_user_authorized():
-        raise Exception("Conta Telegram não está autorizada. Execute gerar_session.py primeiro.")
-    username = (await client.get_me()).username
-    logger.info("Telethon conectado como @%s", username)
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await client.disconnect()
+    await client.send_file(
+        chat_id,
+        bio,
+        filename="consulta.txt",
+        caption="Aqui está seu resultado em TXT."
+    )
