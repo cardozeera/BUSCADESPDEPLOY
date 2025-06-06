@@ -4,7 +4,6 @@ requests
 python-dotenv
 telethon
 selenium
-supabase
 passlib[bcrypt]
 python-jose
 python-telegram-bot==13.15
