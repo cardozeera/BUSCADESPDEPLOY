@@ -186,7 +186,7 @@ async def startup_event():
 async def shutdown_event():
     try:
         await client.disconnect()
-    except Exception:
+    except:
         pass
 
 # ─────────── Handlers de Telethon ───────────
@@ -212,9 +212,11 @@ async def consulta_cmd(event):
         return
 
     # 1) Autentica via /login do FastAPI
-    try:
+       try:
         resp_login = requests.post(
             f"{BASE_URL}/login",
             json={"email": email, "senha": senha}
         )
-    exce
+    except Exception:
+        await event.reply("Erro de rede ao tentar autenticar.")
+        return
