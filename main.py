@@ -7,18 +7,15 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 from dotenv import load_dotenv
 import requests
 
-# Telethon
 from telethon import TelegramClient, events
-
-# Supabase (já configurado em supabase_config)
 from supabase_config.supabase_client import supabase
 
 # ─────────── Carrega variáveis de ambiente ───────────
@@ -30,11 +27,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 API_ID       = int(os.getenv("API_ID", "0"))
 API_HASH     = os.getenv("API_HASH", "")
-PHONE        = os.getenv("PHONE", "")
 SESSION_NAME = os.getenv("SESSION_NAME", "buscadesp_session")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "@Yanbuscabot")
-
-BASE_URL     = os.getenv("BASE_URL", "https://buscadespdeploy.onrender.com")
+BASE_URL     = os.getenv("BASE_URL", "https://buscadespdeploy-2.onrender.com")
 
 # ───────── Configure Logging ─────────
 logging.basicConfig(level=logging.INFO)
@@ -43,7 +38,6 @@ logger = logging.getLogger(__name__)
 # ─────────── Inicializa o FastAPI ───────────
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,7 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────── Segurança (JWT Bearer) para Swagger ───────────
+# ─────────── JWT no Swagger (Botão Authorize) ───────────
 security = HTTPBearer()
 
 def custom_openapi():
@@ -67,12 +61,8 @@ def custom_openapi():
     )
 
     openapi_schema["components"]["securitySchemes"] = {
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer"
-        }
+        "BearerAuth": {"type": "http", "scheme": "bearer"}
     }
-
     for path in openapi_schema["paths"].values():
         for method in path.values():
             method.setdefault("security", [{"BearerAuth": []}])
@@ -106,7 +96,7 @@ def create_access_token(data: dict, expires_delta: timedelta):
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Token inválido")
         return user_id
@@ -122,9 +112,7 @@ async def get_current_user(
 # ─────────── Rotas FastAPI ───────────
 @app.get("/")
 def root():
-    return {
-        "message": "🚀 API BuscaDesp rodando. Use /login para obter token e depois /consulta com Authorization."
-    }
+    return {"message": "🚀 API BuscaDesp rodando. Use /login para obter token."}
 
 @app.post("/login", response_model=TokenResponse)
 def login_usuario(usuario: Usuario):
@@ -135,12 +123,17 @@ def login_usuario(usuario: Usuario):
     if not bcrypt.verify(usuario.senha, usuario_db["senha_hash"]):
         raise HTTPException(status_code=401, detail="Senha incorreta")
 
-    acesso_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    token = create_access_token({"sub": str(usuario_db["id"])}, expires_delta=acesso_expires)
+    token = create_access_token(
+        {"sub": str(usuario_db["id"])},
+        timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/consulta")
-def registrar_consulta(consulta: Consulta, current_user_id: str = Depends(get_current_user)):
+def registrar_consulta(
+    consulta: Consulta,
+    current_user_id: str = Depends(get_current_user)
+):
     supabase.table("consultas").insert({
         "usuario_id": current_user_id,
         "tipo_busca": consulta.tipo_busca,
@@ -159,23 +152,18 @@ def listar_consultas(current_user_id: str = Depends(get_current_user)):
         .execute()
     return resp.data
 
-# ─────────── Inicializa Telethon (opcional) ───────────
+# ─────────── Telegram Opcional ───────────
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 @app.on_event("startup")
 async def startup_event():
-    # Se estiver no Render, pule a conexão do Telegram (arquivo .session não está presente)
     if os.getenv("RENDER") == "true":
         logger.info("Rodando no Render: pulando conexão do Telegram.")
         return
-
     try:
         await client.connect()
         if not await client.is_user_authorized():
-            logger.warning(
-                "Telethon NÃO autorizado no container. Pulei a conexão. "
-                "Para habilitar, gere a sessão e comite o arquivo .session."
-            )
+            logger.warning("Telethon NÃO autorizado no container.")
             return
         username = (await client.get_me()).username
         logger.info("Telethon conectado como @%s", username)
@@ -188,35 +176,3 @@ async def shutdown_event():
         await client.disconnect()
     except:
         pass
-
-# ─────────── Handlers de Telethon ───────────
-@client.on(events.NewMessage(pattern=r"^/start"))
-async def start_cmd(event):
-    await event.reply(
-        "Olá! Para consultar, envie:\n/consulta <email> <senha> <tipo> <termo>"
-    )
-
-@client.on(events.NewMessage(pattern=r"^/consulta\s+"))
-async def consulta_cmd(event):
-    chat_id = event.chat_id
-    texto = event.message.message.strip()
-    partes = texto.split()
-    if len(partes) < 5:
-        await event.reply("Uso incorreto. Envie:\n/consulta <email> <senha> <tipo> <termo>")
-        return
-
-    _, email, senha, tipo_busca, *resto = partes
-    termo = " ".join(resto).strip()
-    if not termo:
-        await event.reply("Informe o termo após /consulta <email> <senha> <tipo> <termo>")
-        return
-
-    # 1) Autentica via /login do FastAPI
-       try:
-        resp_login = requests.post(
-            f"{BASE_URL}/login",
-            json={"email": email, "senha": senha}
-        )
-    except Exception:
-        await event.reply("Erro de rede ao tentar autenticar.")
-        return
