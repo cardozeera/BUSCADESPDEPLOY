@@ -5,8 +5,10 @@ import io
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
@@ -22,8 +24,8 @@ from supabase_config.supabase_client import supabase
 # ─────────── Carrega variáveis de ambiente ───────────
 load_dotenv()
 
-SECRET_KEY                = os.getenv("SECRET_KEY", "buscadesp_is_lit_2025")
-ALGORITHM                 = "HS256"
+SECRET_KEY                  = os.getenv("SECRET_KEY", "buscadesp_is_lit_2025")
+ALGORITHM                   = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 API_ID       = int(os.getenv("API_ID", "0"))
@@ -40,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 # ─────────── Inicializa o FastAPI ───────────
 app = FastAPI()
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -47,6 +51,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─────────── Segurança (JWT Bearer) para Swagger ───────────
+security = HTTPBearer()
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title="BuscaDesp API",
+        version="1.0.0",
+        description="API do BuscaDesp com autenticação JWT",
+        routes=app.routes,
+    )
+
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer"
+        }
+    }
+
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            method.setdefault("security", [{"BearerAuth": []}])
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # ─────────── Modelos Pydantic ───────────
 class Usuario(BaseModel):
@@ -79,10 +113,10 @@ def verify_token(token: str):
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-async def get_current_user(authorization: str = Header(...)):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Header Authorization inválido")
-    token = authorization.split("Bearer ")[1]
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Security(security)
+):
+    token = credentials.credentials
     return verify_token(token)
 
 # ─────────── Rotas FastAPI ───────────
@@ -125,11 +159,16 @@ def listar_consultas(current_user_id: str = Depends(get_current_user)):
         .execute()
     return resp.data
 
-# ─────────── Inicializa Telethon (sem travar o app) ───────────
+# ─────────── Inicializa Telethon (opcional) ───────────
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 @app.on_event("startup")
 async def startup_event():
+    # Se estiver no Render, pule a conexão do Telegram (arquivo .session não está presente)
+    if os.getenv("RENDER") == "true":
+        logger.info("Rodando no Render: pulando conexão do Telegram.")
+        return
+
     try:
         await client.connect()
         if not await client.is_user_authorized():
@@ -178,43 +217,4 @@ async def consulta_cmd(event):
             f"{BASE_URL}/login",
             json={"email": email, "senha": senha}
         )
-    except Exception:
-        await event.reply("Erro de rede ao tentar autenticar.")
-        return
-
-    if resp_login.status_code != 200:
-        detalhe = resp_login.json().get("detail", "Falha no login")
-        await event.reply(f"Falha no login: {detalhe}")
-        return
-
-    token = resp_login.json().get("access_token")
-    if not token:
-        await event.reply("Erro ao obter token de acesso.")
-        return
-
-    # 2) Gera resultado fictício
-    resultado_texto = f"Resultado fictício para {tipo_busca} = {termo}"
-
-    # 3) Grava no Supabase via /consulta
-    try:
-        requests.post(
-            f"{BASE_URL}/consulta",
-            json={"tipo_busca": tipo_busca, "termo": termo, "resultado": resultado_texto},
-            headers={"Authorization": "Bearer " + token}
-        )
-    except Exception:
-        logger.error("Erro ao gravar consulta no Supabase", exc_info=True)
-
-    # 4) Monta arquivo TXT em memória
-    txt_content = f"Tipo: {tipo_busca}\nTermo: {termo}\nResultado:\n{resultado_texto}"
-    bio = io.BytesIO()
-    bio.write(txt_content.encode("utf-8"))
-    bio.seek(0)
-
-    # 5) Envia o arquivo TXT de volta ao usuário
-    await client.send_file(
-        chat_id,
-        bio,
-        filename="consulta.txt",
-        caption="Aqui está seu resultado em TXT."
-    )
+    exce
