@@ -1,5 +1,6 @@
-fastapi
+gunicorn
 uvicorn
+fastapi
 python-dotenv
 passlib[bcrypt]
 python-jose[cryptography]
