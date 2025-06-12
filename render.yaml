@@ -4,12 +4,8 @@ services:
     env: python
     plan: starter
     region: oregon
-    buildCommand: |
+    # Vamos usar o mesmo passo pra instalar deps e rodar o app
+    startCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: |
-      python -m uvicorn main:app \
-        --host 0.0.0.0 \
-        --port $PORT \
-        --workers 4 \
-        --timeout-keep-alive 120
+      python3 main.py
