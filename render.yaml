@@ -2,11 +2,11 @@ services:
   - type: web
     name: buscadesp
     env: python
-    plan: starter       # ou free
-    region: oregon      # ajuste se precisar
+    plan: starter
+    region: oregon
     buildCommand: |
       pip install --upgrade pip
-      pip install --cache-dir .pip-cache -r requirements.txt
+      pip install -r requirements.txt
     startCommand: |
       gunicorn main:app \
         --workers 4 \
