@@ -1,10 +1,9 @@
-gunicorn
-uvicorn
 fastapi
+uvicorn
+gunicorn
 python-dotenv
 passlib[bcrypt]
-python-jose[cryptography]
-telethon
-pdfplumber
-supabase
+python-jose
 requests
+telethon
+supabase
