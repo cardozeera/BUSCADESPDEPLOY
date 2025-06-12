@@ -1,10 +1,8 @@
- fastapi
--uvicorn[standard]
--gunicorn
-+uvicorn[standard]
- python-dotenv
- passlib[bcrypt]
- python-jose
- requests
- telethon
- supabase
+fastapi
+uvicorn[standard]
+python-dotenv
+passlib[bcrypt]
+python-jose
+requests
+telethon
+supabase
